@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+  <title></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, minimal-ui" />
+  <style type="text/css" title="Default">
+    /* fullscreen */
+    html { height:100%; }
+    body { height:100%; margin:0; overflow:hidden; }
+    /* fix for scroll bars on webkit & >= Mac OS X Lion */
+    ::-webkit-scrollbar { background-color: rgba(0,0,0,0.5); width: 0.75em; height: 0.75em; }
+    ::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.5); }
+  </style>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap"/>
+  <link rel="stylesheet" href="3rdparty/leaflet/leaflet.css"/>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="https://player.vimeo.com/api/player.js"></script>
+  <script src="3rdparty/leaflet/leaflet.js"></script>
+  <script src="pano2vr_player.js"></script>
+  <script src="skin.js"></script>
+</head>
+<body>
+  <!-- -----------8<----------- cut here -----------8<----------- -->
+  <div id="container" style="width:100%;height:100%;">Loading...</div>
+
+  <script>
+    // create the panorama player with the container
+    const pano = new pano2vrPlayer("container");
+    // add the skin object
+    const skin = new pano2vrSkin(pano);
+    // load the configuration
+    window.addEventListener("load", function () {
+      pano.readConfigUrlAsync("pano.xml");
+    });
+  </script>
+
+  <!-- ===== In-panel overlays (no X, responsive) ===== -->
+  <style>
+    /* default large-screen geometry (your current look) */
+    #gallery-overlay,
+    #video-overlay{
+      position:fixed;
+      inset: 175px 460px 198px 455px; /* top right bottom left */
+      display:none; z-index:999999;
+    }
+    #gallery-overlay:target,
+    #video-overlay:target { display:block; }
+
+    .p2vr-gallery{ position:absolute; inset:0; }
+    .g-frame{
+      position:absolute; inset:0; width:100%; height:100%;
+      border:0; display:block; background:transparent; border-radius:6px;
+    }
+
+    /* Responsiveness: relax margins as viewport narrows so the iframe still fits */
+    @media (max-width: 1600px){
+      #gallery-overlay,
+      #video-overlay{ inset: 12vh 20vw 16vh 20vw; }
+    }
+    @media (max-width: 1200px){
+      #gallery-overlay,
+      #video-overlay{ inset: 9vh 12vw 12vh 12vw; }
+    }
+    @media (max-width: 900px){
+      #gallery-overlay,
+      #video-overlay{ inset: 6vh 6vw 8vh 6vw; }
+    }
+    @media (max-width: 680px){
+      #gallery-overlay,
+      #video-overlay{ inset: 3vh 2vw 4vh 2vw; }
+    }
+/* Exact-phone breakpoint: make the overlay fill the whole screen */
+@media (max-width: 372px){
+  #gallery-overlay,
+  #video-overlay{
+    inset: 0 !important;   /* top/right/bottom/left = 0 */
+  }
+  .g-frame{ border-radius: 0; }  /* square corners on tiny screens */
+}
+  </style>
+
+  <!-- Image gallery overlay -->
+  <div id="gallery-overlay" aria-modal="true" role="dialog">
+    <div class="p2vr-gallery">
+      <iframe id="imgFrame" class="g-frame"
+        src="https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/gallery.html?album=LHP">
+      </iframe>
+    </div>
+  </div>
+
+  <!-- Video gallery overlay -->
+  <div id="video-overlay" aria-modal="true" role="dialog">
+    <div class="p2vr-gallery">
+      <iframe id="vidFrame" class="g-frame"
+        src="https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/video-gallery.html?album=LHP">
+      </iframe>
+    </div>
+  </div>
+
+  <script>
+    /* Open helpers (can be called from skin Actions: JS -> openImageGallery() / openVideoGallery()) */
+    window.openImageGallery = function(album = 'LHP'){
+      try {
+        const ret = encodeURIComponent(location.href);
+        const src = `https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
+        const f = document.getElementById('imgFrame');
+        if (f) f.src = src;  // cache-bust each open
+      } catch(_) {}
+      location.hash = '#gallery-overlay';
+    };
+
+    window.openVideoGallery = function(album = 'LHP'){
+      try {
+        const ret = encodeURIComponent(location.href);
+        const src = `https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/video-gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
+        const f = document.getElementById('vidFrame');
+        if (f) f.src = src;  // cache-bust each open
+      } catch(_) {}
+      location.hash = '#video-overlay';
+    };
+
+    /* Keep your closer name; closes any overlay */
+    window.closeGalleryOverlay = () => { location.hash = ''; };
+
+    /* Esc to close whichever overlay is open */
+    window.addEventListener('keydown', (e)=>{
+      if (e.key === 'Escape' &&
+          (location.hash === '#gallery-overlay' || location.hash === '#video-overlay')) {
+        location.hash = '';
+      }
+    });
+  </script>
+  <!-- ===== /overlays ===== -->
+
+  <noscript><p><b>Please enable Javascript!</b></p></noscript>
+  <!-- -----------8<----------- cut here -----------8<----------- -->
+</body>
+</html>

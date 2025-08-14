@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tải video</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{ --bg:#f5f7fb; --panel:#fff; --brand:#0f4180; --fg:#0c1533; --muted:#606b86; --border:#dfe4ee; --shadow:0 10px 30px rgba(16,32,74,.08) }
+    html,body{height:100%}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--fg);margin:0;display:grid;place-items:center;padding:24px}
+    .card{width:min(560px,96vw);background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:22px}
+    h1{margin:0 0 6px;color:var(--brand)}
+    p.sub{margin:0 0 12px;color:var(--muted)}
+
+    /* Auth line + buttons */
+    .authbar{display:flex;gap:8px;align-items:center;margin:-6px 0 8px 0;color:var(--muted)}
+    .authbar .btn{
+      padding:6px 10px;border-radius:8px;border:1px solid var(--brand);
+      background:#eef3ff;color:var(--brand);cursor:pointer;font-weight:600;white-space:nowrap;
+    }
+    .authbar .btn:hover{background:#e3edff}
+
+    label{display:block;margin:12px 0 6px;font-weight:600}
+    input[type="file"],input[type="text"],input[type="email"],input[type="password"]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px}
+
+    /* Primary buttons (submit / auth OK) */
+    .primary{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--brand);background:var(--brand);color:#fff;font-weight:700;cursor:pointer}
+    .primary[disabled]{opacity:.6;cursor:not-allowed}
+
+    .msg{margin-top:10px;min-height:20px}
+    .ok{color:#15803d} .err{color:#b91c1c}
+    .footer{margin-top:14px}
+    a{color:var(--brand)}
+
+    dialog{border:1px solid var(--border);border-radius:12px;background:var(--panel);color:var(--fg);padding:16px;box-shadow:var(--shadow)}
+    dialog .row{display:grid;gap:10px}
+    .ghost{background:var(--panel);color:var(--brand);border:1px solid var(--brand);padding:10px 14px;border-radius:10px;cursor:pointer}
+    .ghost:hover{background:#eef3ff}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Upload Video</h1>
+    <p class="sub">Hỗ trợ MP4/WebM • khuyên dùng &lt; 200MB • <b>Album: LHP</b></p>
+
+    <div class="authbar">
+      <span id="who">Chưa đăng nhập</span>
+      <button id="signin"  class="btn">Đăng nhập</button>
+      <button id="signup"  class="btn">Đăng ký</button>
+      <button id="signout" class="btn" style="display:none">Đăng xuất</button>
+    </div>
+
+    <form id="form">
+      <label>Chọn video</label>
+      <input id="file" type="file" accept="video/*" required />
+
+      <label>Tiêu đề (tuỳ chọn)</label>
+      <input id="title" type="text" placeholder="Ví dụ: Recap Ngày hội thể thao" />
+
+      <button id="submit" class="primary">Tải lên</button>
+      <div class="msg" id="msg"></div>
+      <div class="msg" id="quota"></div>
+    </form>
+
+    <div class="footer">
+      <a id="back" href="https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/index.html">Quay về tour</a>
+    </div>
+  </div>
+
+  <!-- auth dialog -->
+  <dialog id="authDlg">
+    <div class="row">
+      <h3 id="authTitle" style="margin:0 0 8px 0;color:var(--brand)">Đăng nhập</h3>
+      <input id="email" type="email" placeholder="Email" required />
+      <input id="password" type="password" placeholder="Mật khẩu (tối thiểu 6)" minlength="6" required />
+      <div style="display:flex;gap:8px">
+        <button id="authGo" class="primary" type="button">OK</button>
+        <button id="authCancel" type="button" class="ghost">Hủy</button>
+      </div>
+      <div id="authMsg" class="msg"></div>
+    </div>
+  </dialog>
+
+<script>
+const SUPA_URL  = "https://ztmxxbtxvtcbpgxjntlv.supabase.co";
+const SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bXh4YnR4dnRjYnBneGpudGx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MDAyMDYsImV4cCI6MjA3MDQ3NjIwNn0.Mh0VP6FdqAZ4T3RlhMtQxkH72-e-OAz6IkPMzPVa4Jk";
+const BUCKET = "videos";
+const ALBUM  = (new URLSearchParams(location.search)).get('album') || "LHP";
+
+const { createClient } = supabase;
+const sb = createClient(SUPA_URL, SUPA_ANON);
+
+const who=document.getElementById('who'), signin=document.getElementById('signin'),
+      signup=document.getElementById('signup'), signout=document.getElementById('signout');
+const authDlg=document.getElementById('authDlg'), authTitle=document.getElementById('authTitle'),
+      authGo=document.getElementById('authGo'), authCancel=document.getElementById('authCancel'),
+      emailI=document.getElementById('email'), passI=document.getElementById('password'),
+      authMsg=document.getElementById('authMsg');
+
+const params = new URLSearchParams(location.search);
+const retUrl = params.get('return') || document.referrer || location.origin;
+const backA = document.getElementById('back'); backA.href = retUrl;
+
+const form=document.getElementById('form'), fileEl=document.getElementById('file'),
+      titleEl=document.getElementById('title'), msg=document.getElementById('msg'),
+      quota=document.getElementById('quota'), submit=document.getElementById('submit');
+
+let authMode='in';
+function say(t,c){ msg.className='msg '+(c||''); msg.textContent=t||''; }
+function qsay(t){ quota.textContent=t||''; }
+
+async function refreshUser(){
+  const { data:{ user } } = await sb.auth.getUser();
+  if (user){
+    who.textContent = user.email || 'Đã đăng nhập';
+    signin.style.display='inline-flex'; signup.style.display='inline-flex'; // keep visible for other users if they share machine
+    signout.style.display='inline-flex';
+    softQuotaCheck();
+  } else {
+    who.textContent='Chưa đăng nhập';
+    signin.style.display='inline-flex'; signup.style.display='inline-flex';
+    signout.style.display='none'; qsay('');
+  }
+}
+signin.onclick=()=>{ authMode='in'; authTitle.textContent='Đăng nhập'; authMsg.textContent=''; authDlg.showModal(); };
+signup.onclick=()=>{ authMode='up'; authTitle.textContent='Đăng ký'; authMsg.textContent=''; authDlg.showModal(); };
+signout.onclick=async()=>{ await sb.auth.signOut(); await refreshUser(); };
+authCancel.onclick=()=>authDlg.close();
+authGo.onclick=async()=>{
+  authMsg.textContent='';
+  try{
+    if (authMode==='up'){
+      const {error}=await sb.auth.signUp({email:emailI.value.trim(),password:passI.value});
+      if(error)throw error;
+      authMsg.textContent='Tạo tài khoản thành công! Bạn có thể đăng nhập rồi.';
+    }else{
+      const {error}=await sb.auth.signInWithPassword({email:emailI.value.trim(),password:passI.value});
+      if(error)throw error;
+      authDlg.close(); await refreshUser();
+    }
+  }catch(e){ authMsg.textContent=e.message||'Lỗi đăng nhập/đăng ký'; }
+};
+
+/* Soft quota message (DB still enforces 2/day) */
+async function softQuotaCheck(){
+  const start = new Date(); start.setHours(0,0,0,0);
+  const { data:{ user } } = await sb.auth.getUser(); if(!user){ qsay(''); return; }
+  const { count } = await sb.from('videos')
+    .select('id', { count:'exact', head:true })
+    .eq('owner_id', user.id)
+    .gte('created_at', start.toISOString());
+  qsay(`Giới hạn: 2 video/ngày • Hôm nay đã: ${count ?? 0}`);
+}
+
+form.addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const { data:{ user } } = await sb.auth.getUser();
+  if (!user) return say('Vui lòng đăng nhập trước khi tải lên.', 'err');
+
+  const file = fileEl.files[0];
+  if (!file) return say('Hãy chọn một video.', 'err');
+  if (!file.type.startsWith('video/')) return say('File phải là video.', 'err');
+
+  submit.disabled = true; say('Đang tải lên…');
+  try{
+    const ext = (file.name.split('.').pop()||'mp4').toLowerCase();
+    const ym  = new Date().toISOString().slice(0,7);
+    const path = `${ALBUM}/${ym}/${crypto.randomUUID()}.${ext}`;
+
+    const up = await sb.storage.from(BUCKET).upload(path, file, { cacheControl:'3600', upsert:false, contentType:file.type });
+    if (up.error) throw up.error;
+
+    const pub = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+
+    // Insert row — RLS should enforce 2/day limit
+    const ins = await sb.from('videos').insert({
+      album: ALBUM, url: pub, title: titleEl.value.trim(),
+      storage_path: path, owner_id: user.id
+    });
+    if (ins.error) throw ins.error;
+
+    say('Đã tải video!', 'ok');
+    try{ parent.postMessage({ type:'video_uploaded', album: ALBUM }, '*'); }catch(_){}
+    softQuotaCheck();
+  }catch(err){
+    console.error(err); say(err.message || 'Tải lên thất bại.', 'err');
+  }finally{
+    submit.disabled = false;
+  }
+});
+
+backA.addEventListener('click', (e)=>{
+  if (window.opener && !window.opener.closed) {
+    e.preventDefault();
+    try { window.opener.postMessage({ type:'video_uploaded', album: ALBUM }, '*'); } catch(_) {}
+    window.close(); setTimeout(()=>location.href=retUrl,200);
+  }
+});
+
+refreshUser();
+</script>
+</body>
+</html>

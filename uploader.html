@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Upload a Photo</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* Light theme to match gallery */
+    :root{
+      --bg:#f5f7fb;
+      --panel:#ffffff;
+      --brand:#0f4180;
+      --fg:#0c1533;
+      --muted:#606b86;
+      --border:#dfe4ee;
+      --shadow: 0 10px 30px rgba(16,32,74,.08);
+    }
+    html,body{height:100%}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg); color:var(--fg); margin:0;
+      display:grid; place-items:center; padding:24px;
+    }
+    .card{
+      width:min(560px,96vw);
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      box-shadow:var(--shadow);
+      padding:22px;
+    }
+    h1{font-size:20px;margin:0 0 6px;color:var(--brand)}
+    p.sub{color:var(--muted);margin:0 0 16px}
+
+    .authbar{display:flex;gap:8px;align-items:center;margin:-6px 0 8px 0;color:var(--muted)}
+    .authbar .btn{padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--fg);cursor:pointer}
+    .authbar .btn:hover{background:#f2f6ff}
+
+    label{display:block;margin:14px 0 8px;font-weight:600}
+    input[type="file"],input[type="text"],input[type="email"],input[type="password"]{
+      width:100%;padding:10px 12px;border:1px solid var(--border);
+      background:var(--panel);color:var(--fg);border-radius:10px
+    }
+
+    button{
+      margin-top:16px;display:inline-flex;align-items:center;gap:8px;
+      padding:10px 14px;border-radius:10px;border:1px solid var(--brand);
+      background:var(--brand);color:#fff;font-weight:700;cursor:pointer
+    }
+    button[disabled]{opacity:.6;cursor:not-allowed}
+    .msg{margin-top:12px;min-height:20px}
+    .ok{color:#15803d} .err{color:#b91c1c}
+    .footer{margin-top:16px}
+    a{color:var(--brand)}
+
+    dialog{
+      border:1px solid var(--border);border-radius:12px;background:var(--panel);
+      color:var(--fg);padding:16px;box-shadow:var(--shadow)
+    }
+    dialog .row{display:grid;gap:10px}
+    dialog .row .act{display:flex;gap:8px}
+    dialog .row button{margin-top:0}
+    .ghost{background:var(--panel);color:var(--brand);border:1px solid var(--brand)}
+    .ghost:hover{background:#eef3ff}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Tải lên một bức ảnh</h1>
+    <p class="sub">JPG/PNG • Tối đa 8 MB • <b>Album: LHP</b></p>
+
+    <div class="authbar">
+      <span id="who">Chưa đăng nhập</span>
+      <button id="signin" class="btn">Đăng nhập</button>
+      <button id="signup" class="btn">Đăng ký</button>
+      <button id="signout" class="btn" style="display:none">Đăng xuất</button>
+    </div>
+
+    <form id="form">
+      <label>Chọn một bức ảnh</label>
+      <input id="file" type="file" accept="image/*" required />
+
+      <label>Tiêu đề</label>
+      <input id="title" type="text" placeholder="e.g., Lớp A tại lễ khai giảng" />
+
+      <button id="submit">Tải lên</button>
+      <div class="msg" id="msg"></div>
+    </form>
+
+    <div class="footer">
+      <a id="back" href="https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/index.html">Back to tour</a>
+    </div>
+  </div>
+
+  <!-- Auth dialog -->
+  <dialog id="authDlg">
+    <div class="row">
+      <h3 id="authTitle" style="margin:0 0 8px 0;color:var(--brand)">Đăng ký</h3>
+      <input id="email" type="email" placeholder="Email" required />
+      <input id="password" type="password" placeholder="Password (min 6)" minlength="6" required />
+      <div class="act">
+        <button id="authGo">OK</button>
+        <button id="authCancel" type="button" class="ghost">Cancel</button>
+      </div>
+      <div id="authMsg" class="msg"></div>
+    </div>
+  </dialog>
+
+<script>
+/* ======= CONFIG ======= */
+const SUPA_URL  = "https://ztmxxbtxvtcbpgxjntlv.supabase.co";
+const SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bXh4YnR4dnRjYnBneGpudGx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MDAyMDYsImV4cCI6MjA3MDQ3NjIwNn0.Mh0VP6FdqAZ4T3RlhMtQxkH72-e-OAz6IkPMzPVa4Jk";
+const BUCKET    = "gallery";
+const ALBUM     = "LHP"; // locked album/folder
+/* ======================= */
+
+/* Return link handling */
+const params   = new URLSearchParams(location.search);
+const backA        = document.getElementById('back');
+const defaultBack  = backA.getAttribute('href');
+const retUrl       = params.get("return") || document.referrer || defaultBack;
+backA.href = retUrl;
+backA.addEventListener('click', (e) => {
+  if (window.opener && !window.opener.closed) {
+    e.preventDefault();
+    try { window.opener.postMessage({ type:'photo_uploaded', album: ALBUM }, '*'); } catch(_) {}
+    window.close();
+    setTimeout(() => { location.href = retUrl; }, 200);
+  }
+});
+
+/* Supabase */
+const { createClient } = supabase;
+const sb = createClient(SUPA_URL, SUPA_ANON);
+
+/* UI refs */
+const form   = document.getElementById('form');
+const fileEl = document.getElementById('file');
+const titleEl= document.getElementById('title');
+const msg    = document.getElementById('msg');
+const submit = document.getElementById('submit');
+
+const who    = document.getElementById('who');
+const signin = document.getElementById('signin');
+const signup = document.getElementById('signup');
+const signout= document.getElementById('signout');
+const authDlg= document.getElementById('authDlg');
+const authTitle = document.getElementById('authTitle');
+const authGo = document.getElementById('authGo');
+const authCancel = document.getElementById('authCancel');
+const authMsg = document.getElementById('authMsg');
+const emailI = document.getElementById('email');
+const passI  = document.getElementById('password');
+
+function say(text, cls){ msg.className = 'msg ' + (cls||''); msg.textContent = text; }
+
+/* Auth helpers */
+let authMode = 'in'; // 'in' or 'up'
+
+async function refreshUser(){
+  const { data:{ user } } = await sb.auth.getUser();
+  if (user) {
+    who.textContent = user.email || 'Signed in';
+    signin.style.display = 'none';
+    signup.style.display = 'none';
+    signout.style.display = 'inline-flex';
+  } else {
+    who.textContent = 'Not signed in';
+    signin.style.display = 'inline-flex';
+    signup.style.display = 'inline-flex';
+    signout.style.display = 'none';
+  }
+}
+
+signin.onclick = () => { authMode='in'; authTitle.textContent='Sign in'; authMsg.textContent=''; authDlg.showModal(); };
+signup.onclick = () => { authMode='up'; authTitle.textContent='Sign up'; authMsg.textContent=''; authDlg.showModal(); };
+signout.onclick= async() => { await sb.auth.signOut(); await refreshUser(); };
+
+authCancel.onclick = () => authDlg.close();
+authGo.onclick = async () => {
+  authMsg.textContent = '';
+  try{
+    if (authMode==='up'){
+      const { error } = await sb.auth.signUp({ email: emailI.value.trim(), password: passI.value });
+      if (error) throw error;
+      authMsg.textContent = 'Tài khoản đã được tạo. Bạn có thể đăng nhập rồi.';
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email: emailI.value.trim(), password: passI.value });
+      if (error) throw error;
+      authDlg.close();
+      await refreshUser();
+    }
+  }catch(err){ authMsg.textContent = err.message || 'Tài khoản hoặc mật khẩu sai.'; }
+};
+
+/* Upload flow */
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  // must be signed in (RLS)
+  const { data:{ user } } = await sb.auth.getUser();
+  if (!user) {
+    say('Để tải lên, bạn cần phải đăng nhập vào 1 tài khoản.', 'err');
+    return;
+  }
+
+  const file = fileEl.files[0];
+  if (!file) return say('Hãy chọn một file ảnh để tải lên.', 'err');
+  if (!file.type.startsWith('image/')) return say('Định dạng file bắt buộc phải là JPG/PNG.', 'err');
+  if (file.size > 8*1024*1024) return say('Dung lượng tối đa là 8MB.', 'err');
+
+  submit.disabled = true; say('Uploading…');
+
+  try {
+    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+    const ym  = new Date().toISOString().slice(0,7); // YYYY-MM
+    const path = `${ALBUM}/${ym}/${crypto.randomUUID()}.${ext}`; // storage path in bucket
+
+    // 1) Upload to Storage
+    const up = await sb.storage.from(BUCKET).upload(path, file, {
+      cacheControl: '3600', upsert: false, contentType: file.type
+    });
+    if (up.error) throw up.error;
+
+    // 2) Public URL (CDN)
+    const pub = sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+
+    // 3) Insert DB row (includes storage_path + owner_id)
+    const ins = await sb.from('photos').insert({
+      album: ALBUM,
+      url: pub,
+      thumb_url: pub,                 // or pub + '?width=480&quality=80'
+      title: titleEl.value.trim(),
+      storage_path: path,             // for future replace/delete
+      owner_id: user.id               // the uploader owns the row
+      // ,approved: true               // uncomment if you want immediate public visibility
+    });
+    if (ins.error) throw ins.error;
+
+    say('Tải lên thành công! Bạn có thể quay trở lại tour rồi.', 'ok');
+
+    // Notify parent/overlay
+    try { parent.postMessage({ type:'photo_uploaded', album: ALBUM }, '*'); } catch(e){}
+  } catch(err){
+    console.error(err);
+    say((err && err.message) || 'Tải lên thât bại. Xin hãy thử lại sau.', 'err');
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+/* init */
+refreshUser();
+</script>
+</body>
+</html>

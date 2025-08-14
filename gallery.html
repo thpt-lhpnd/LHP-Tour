@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gallery</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * , *::before , *::after { box-sizing: border-box; }
+    :root{
+      --bg:#f5f7fb; --panel:#ffffff; --brand:#0f4180; --fg:#0c1533; --muted:#606b86; --border:#dfe4ee;
+      --thumb-h: 90px; --head-h: 56px; --img-max: 72%;
+    }
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow:hidden}
+    header{
+      height:var(--head-h);display:flex;align-items:center;justify-content:space-between;
+      padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--border)
+    }
+    header strong{color:var(--brand);font-weight:800}
+    header .right{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--muted)}
+    .btn{color:var(--brand);background:#eef3ff;border:1px solid var(--brand);padding:6px 10px;border-radius:8px;cursor:pointer;font-weight:600}
+    .btn:hover{background:#e3edff} .btn:active{transform:translateY(1px)}
+    .muted{color:var(--muted)}
+    .wrap{height:calc(100vh - var(--head-h));padding:12px;display:grid;grid-template-columns:1fr 2fr;gap:12px;overflow:hidden}
+    .rail{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:auto;padding:8px}
+    .list{display:flex;flex-direction:column;gap:8px}
+    .card{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center;height:var(--thumb-h);background:#f6f8fd;border:1px solid var(--border);border-radius:10px;cursor:pointer;padding:6px;transition:box-shadow .12s}
+    .card:hover{box-shadow:0 6px 14px rgba(12,21,51,.08)} .card.selected{outline:2px solid #4f8cff;background:#eef5ff}
+    .thumb{width:100%;height:calc(var(--thumb-h) - 12px);object-fit:cover;border-radius:8px;display:block;background:#e3e9f5}
+    .title{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .viewer{background:var(--panel);border:1px solid var(--border);border-radius:12px;position:relative;overflow:hidden;padding:20px;display:flex;align-items:center;justify-content:center;min-height:0;min-width:0}
+    .viewer img{max-width:var(--img-max);max-height:var(--img-max);object-fit:contain;object-position:center center;margin:0 auto}
+    .empty{color:var(--muted)}
+    .caption{position:absolute;left:14px;right:14px;bottom:10px;text-align:center;color:#10204a;font-weight:600;background:rgba(255,255,255,.65);padding:6px 10px;border-radius:10px;backdrop-filter:blur(4px)}
+    .tools{position:absolute;top:10px;right:10px;display:flex;gap:8px}
+    .tbtn{background:#fff;border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600}
+    .tbtn:hover{background:#f3f6ff} .danger{border-color:#f33;color:#c00;background:#fff3f3}
+    /* tiny sign-in dialog */
+    dialog{border:1px solid var(--border);border-radius:12px;padding:16px}
+    dialog form{display:grid;gap:8px}
+    input[type="email"],input[type="password"]{padding:8px 10px;border:1px solid var(--border);border-radius:8px}
+/* ===== Mobile layout tuned for 372px ===== */
+@media (max-width: 372px){
+  :root{
+    --head-h: 50px;   /* shorter header */
+    --thumb-h: 70px;  /* compact thumbs */
+    --img-max: 92%;   /* bigger preview */
+  }
+
+  /* header: tighter controls, allow wrap */
+  header{ padding: 8px 10px; }
+  header .right{ gap: 6px; flex-wrap: wrap; }
+  .btn{ padding: 4px 8px; font-size: 12px; }
+
+  /* stack the layout: thumbnail strip on top, viewer below */
+  .wrap{
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 8px;
+    padding: 6px;
+  }
+
+  /* top strip scrolls horizontally */
+  .rail{
+    height: 110px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 6px;
+    scrollbar-gutter: stable;
+  }
+  .list{
+    flex-direction: row;
+    gap: 6px;
+    white-space: nowrap;   /* no wrapping -> smooth sideways scroll */
+  }
+
+  /* thumbnail tiles: image-only */
+  .card{
+    grid-template-columns: 80px;   /* only the image column */
+    width: 80px;
+    height: 98px;
+    padding: 4px;
+  }
+  .thumb{
+    height: 80px;
+    border-radius: 8px;
+  }
+  .card .title, .card .muted{ display: none; }
+
+  /* viewer */
+  .viewer{
+    padding: 8px;
+    min-height: 0;
+  }
+  .viewer img{
+    max-width: var(--img-max);
+    max-height: var(--img-max);
+    object-fit: contain;
+    object-position: center center;
+  }
+  .caption{
+    left: 8px; right: 8px; bottom: 6px;
+    font-size: 12px; padding: 6px 8px;
+  }
+}
+
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>Thư Viện Ảnh</strong>
+      <span id="albumLabel" class="muted" style="margin-left:8px"></span>
+    </div>
+    <div class="right">
+      <button id="refresh" class="btn">Tải lại ảnh</button>
+      <button id="upload"  class="btn">Tải lên ảnh</button>
+      <span id="status" class="muted" aria-live="polite"></span>
+
+      <span id="who" class="muted"></span>
+      <button id="signin" class="btn">Đăng nhập</button>
+      <button id="signup" class="btn">Đăng ký</button>
+      <button id="signout" class="btn" style="display:none">Đăng xuất</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <aside class="rail" aria-label="Thumbnails">
+      <div id="list" class="list" role="list"></div>
+    </aside>
+
+    <main class="viewer" aria-live="polite">
+      <div id="empty" class="empty">Chọn một ảnh</div>
+      <img id="viewer" alt="" style="display:none" />
+      <div id="cap" class="caption" style="display:none"></div>
+
+      <!-- owner/admin tools -->
+      <div id="tools" class="tools" style="display:none">
+        <button id="rename"  class="tbtn">Đổi tiêu đề</button>
+        <button id="replace" class="tbtn">Thay ảnh</button>
+        <button id="delete"  class="tbtn danger">Xoá</button>
+        <input id="replaceFile" type="file" accept="image/*" hidden />
+      </div>
+    </main>
+  </div>
+
+  <!-- Simple auth modal -->
+  <dialog id="authDlg">
+    <form id="authForm">
+      <div style="font-weight:700;margin-bottom:6px" id="authTitle">Đăng nhập</div>
+      <input id="email" type="email" placeholder="Email" required />
+      <input id="password" type="password" placeholder="Mật khẩu (min 6)" required minlength="6"/>
+      <button class="btn" id="authGo" type="submit">OK</button>
+      <button class="btn" type="button" onclick="authDlg.close()">Hủy</button>
+      <div id="authMsg" class="muted"></div>
+    </form>
+  </dialog>
+
+<script>
+/* ===== Supabase ===== */
+const SUPA_URL  = "https://ztmxxbtxvtcbpgxjntlv.supabase.co";
+const SUPA_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp0bXh4YnR4dnRjYnBneGpudGx2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ5MDAyMDYsImV4cCI6MjA3MDQ3NjIwNn0.Mh0VP6FdqAZ4T3RlhMtQxkH72-e-OAz6IkPMzPVa4Jk";
+const UPLOADER_URL = "https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/uploader.html";
+const BUCKET    = "gallery";
+const DEFAULT_ALBUM = "LHP";
+/* ==================== */
+
+const params = new URLSearchParams(location.search);
+const album  = params.get('album') || DEFAULT_ALBUM;
+document.getElementById('albumLabel').textContent = `• ${album}`;
+
+const { createClient } = supabase;
+const sb = createClient(SUPA_URL, SUPA_ANON);
+
+/* --- UI refs --- */
+const listEl   = document.getElementById('list');
+const statusEl = document.getElementById('status');
+const viewer   = document.getElementById('viewer');
+const empty    = document.getElementById('empty');
+const cap      = document.getElementById('cap');
+const tools    = document.getElementById('tools');
+const renameBtn= document.getElementById('rename');
+const replaceBtn=document.getElementById('replace');
+const deleteBtn= document.getElementById('delete');
+const fileReplace = document.getElementById('replaceFile');
+
+const who = document.getElementById('who');
+const btnIn  = document.getElementById('signin');
+const btnUp  = document.getElementById('signup');
+const btnOut = document.getElementById('signout');
+const authDlg = document.getElementById('authDlg');
+const authForm= document.getElementById('authForm');
+const authTitle= document.getElementById('authTitle');
+const authMsg= document.getElementById('authMsg');
+
+document.getElementById('refresh').onclick = load;
+
+// --- Open uploader in a new tab, passing album + return URL ---
+const uploadBtn = document.getElementById('upload');
+uploadBtn.onclick = () => {
+  const url =
+    `${UPLOADER_URL}?album=${encodeURIComponent(album)}&return=${encodeURIComponent(location.href)}`;
+  window.open(url, "_blank", "noopener");
+};
+
+let rows = [];
+let selected = null;   // current row object
+let me = null;         // current user
+let isAdmin = false;
+
+function setStatus(t){ statusEl.textContent = t || ''; }
+
+/* ---------- Auth ---------- */
+async function refreshUser(){
+  const { data:{ user } } = await sb.auth.getUser();
+  me = user || null;
+  who.textContent = me ? (me.email || 'Đã đăng nhập') : '';
+  btnIn.style.display = me ? 'none' : 'inline-block';
+  btnUp.style.display = me ? 'none' : 'inline-block';
+  btnOut.style.display= me ? 'inline-block' : 'none';
+
+  // load admin flag
+  if (me){
+    const { data } = await sb.from('profiles').select('is_admin').eq('id', me.id).single();
+    isAdmin = !!(data && data.is_admin);
+  } else {
+    isAdmin = false;
+  }
+  updateTools();
+}
+sb.auth.onAuthStateChange(() => { refreshUser(); });
+
+btnIn.onclick = () => { authTitle.textContent='Đăng nhập'; authDlg.showModal(); authForm.dataset.mode='in'; };
+btnUp.onclick = () => { authTitle.textContent='Đăng ký';   authDlg.showModal(); authForm.dataset.mode='up'; };
+btnOut.onclick= async()=>{ await sb.auth.signOut(); };
+
+authForm.onsubmit = async (e)=>{
+  e.preventDefault();
+  authMsg.textContent = '';
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  try{
+    if (authForm.dataset.mode === 'up'){
+      const { error } = await sb.auth.signUp({ email, password });
+      if (error) throw error;
+      authMsg.textContent = 'Tạo tài khoản thành công. Hãy đăng nhập.';
+    } else {
+      const { error } = await sb.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      authDlg.close();
+    }
+  }catch(err){ authMsg.textContent = err.message || 'Lỗi'; }
+};
+
+/* ---------- Gallery logic ---------- */
+function derivePathFromUrl(u){
+  // Try to recover storage path from a public URL
+  // e.g. https://.../storage/v1/object/public/gallery/LHP/2025-08/uuid.jpg -> LHP/2025-08/uuid.jpg
+  const m = u.match(/\/storage\/v1\/object\/public\/[^/]+\/(.+)$/);
+  return m ? m[1] : null;
+}
+
+function selectRow(row){
+  selected = row || null;
+  if (selected){
+    viewer.src = selected.url;
+    viewer.style.display = 'block';
+    empty.style.display  = 'none';
+    cap.textContent = selected.title || '';
+    cap.style.display = selected.title ? 'block' : 'none';
+  }else{
+    viewer.src = '';
+    viewer.style.display = 'none';
+    empty.style.display  = 'block';
+    cap.style.display    = 'none';
+  }
+  listEl.querySelectorAll('.card').forEach(c => c.classList.toggle('selected', c.dataset.url === (row?.url || '')));
+  updateTools();
+}
+
+function canManage(row){
+  if (!row || !me) return false;
+  return isAdmin || row.owner_id === me.id;
+}
+
+function updateTools(){
+  tools.style.display = canManage(selected) ? 'flex' : 'none';
+}
+
+function makeCard(row){
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.role = 'listitem';
+  card.dataset.url = row.url;
+
+  const img = document.createElement('img');
+  img.className = 'thumb';
+  img.src = row.thumb_url || row.url;
+  img.alt = row.title || '';
+  img.onerror = () => { if (img.src !== row.url) img.src = row.url; };
+
+  const meta = document.createElement('div');
+  const t = document.createElement('div'); t.className='title'; t.textContent = row.title || ' ';
+  const s = document.createElement('div'); s.className='muted'; s.textContent = new Date(row.created_at).toLocaleDateString();
+  meta.appendChild(t); meta.appendChild(s);
+
+  card.appendChild(img); card.appendChild(meta);
+  card.onclick = ()=> selectRow(row);
+  return card;
+}
+
+async function load(){
+  setStatus('Loading…');
+  try{
+    const { data, error } = await sb
+      .from('photos')
+      .select('url, thumb_url, title, created_at, owner_id, storage_path')
+      .eq('album', album)
+      .or(`approved.is.true,owner_id.eq.${(me && me.id) || '00000000-0000-0000-0000-000000000000'}`)  // show mine even if not approved
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if(error) throw error;
+
+    rows = data || [];
+    listEl.innerHTML = '';
+    rows.forEach(r => listEl.appendChild(makeCard(r)));
+    setStatus(`${rows.length} photo(s)`);
+
+    // keep selection if possible
+    const keep = rows.find(r => r.url === (selected && selected.url));
+    selectRow(keep || rows[0] || null);
+  }catch(err){
+    console.error(err);
+    listEl.innerHTML = '<div class="muted">Failed to load gallery.</div>';
+    setStatus('');
+    selectRow(null);
+  }
+}
+
+/* ----- Manage actions (owner/admin) ----- */
+renameBtn.onclick = async ()=>{
+  if (!selected) return;
+  const newTitle = prompt('Tiêu đề mới:', selected.title || '');
+  if (newTitle === null) return;
+  const { error } = await sb.from('photos')
+    .update({ title: newTitle })
+    .eq('url', selected.url);
+  if (error){ alert(error.message); return; }
+  selected.title = newTitle;
+  cap.textContent = newTitle;
+  // update card title
+  const card = [...listEl.children].find(c => c.dataset.url === selected.url);
+  if (card) card.querySelector('.title').textContent = newTitle || ' ';
+};
+
+replaceBtn.onclick = ()=> fileReplace.click();
+fileReplace.onchange = async ()=>{
+  if (!selected || !fileReplace.files.length) return;
+  const file = fileReplace.files[0];
+  if (!file.type.startsWith('image/')) return alert('File phải là ảnh');
+  try{
+    // new path
+    const ext = (file.name.split('.').pop()||'jpg').toLowerCase();
+    const ym  = new Date().toISOString().slice(0,7);
+    const newPath = `${album}/${ym}/${crypto.randomUUID()}.${ext}`;
+
+    // upload
+    const up = await sb.storage.from(BUCKET).upload(newPath, file, { cacheControl:'3600', upsert:false, contentType:file.type });
+    if (up.error) throw up.error;
+
+    const newUrl = sb.storage.from(BUCKET).getPublicUrl(newPath).data.publicUrl;
+
+    // update row (url/thumb/storage_path)
+    const { error } = await sb.from('photos')
+      .update({ url:newUrl, thumb_url:newUrl, storage_path:newPath })
+      .eq('url', selected.url);
+    if (error) throw error;
+
+    // delete old file if we have its path
+    const oldPath = selected.storage_path || derivePathFromUrl(selected.url);
+    if (oldPath) { await sb.storage.from(BUCKET).remove([oldPath]); }
+
+    // reflect in UI
+    selected.url = newUrl; selected.thumb_url = newUrl; selected.storage_path = newPath;
+    viewer.src = newUrl;
+    const card = [...listEl.children].find(c => c.dataset.url === selected.url);
+    if (card) card.querySelector('img').src = newUrl;
+
+  }catch(err){ alert(err.message || 'Replace failed'); }
+  finally{ fileReplace.value = ''; }
+};
+
+deleteBtn.onclick = async ()=>{
+  if (!selected) return;
+  if (!confirm('Xoá ảnh này?')) return;
+  try{
+    // delete row first (RLS will check owner/admin)
+    const { error } = await sb.from('photos').delete().eq('url', selected.url);
+    if (error) throw error;
+
+    // best-effort delete file
+    const path = selected.storage_path || derivePathFromUrl(selected.url);
+    if (path) { await sb.storage.from(BUCKET).remove([path]); }
+
+    // update UI
+    const idx = rows.findIndex(r => r.url === selected.url);
+    if (idx >= 0) rows.splice(idx,1);
+    listEl.innerHTML = '';
+    rows.forEach(r => listEl.appendChild(makeCard(r)));
+    selectRow(rows[0] || null);
+  }catch(err){ alert(err.message || 'Delete failed'); }
+};
+
+/* Load & refresh */
+load();
+setInterval(load, 30000);
+
+/* Reflect uploader events */
+window.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'photo_uploaded' && ev.data.album === album) load();
+});
+
+/* initial auth sync */
+refreshUser();
+</script>
+</body>
+</html>
