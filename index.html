@@ -12,18 +12,24 @@
     ::-webkit-scrollbar { background-color: rgba(0,0,0,0.5); width: 0.75em; height: 0.75em; }
     ::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.5); }
   </style>
+
+  <!-- Fonts (unchanged) -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap"/>
+
+  <!-- 3rd-party libs you already use -->
   <link rel="stylesheet" href="3rdparty/leaflet/leaflet.css"/>
   <script src="https://www.youtube.com/iframe_api"></script>
   <script src="https://player.vimeo.com/api/player.js"></script>
   <script src="3rdparty/leaflet/leaflet.js"></script>
+
+  <!-- Pano2VR build -->
   <script src="pano2vr_player.js"></script>
   <script src="skin.js"></script>
 </head>
 <body>
-  <!-- -----------8<----------- cut here -----------8<----------- -->
+  <!-- Panorama container -->
   <div id="container" style="width:100%;height:100%;">Loading...</div>
 
   <script>
@@ -39,7 +45,7 @@
 
   <!-- ===== In-panel overlays (no X, responsive) ===== -->
   <style>
-    /* default large-screen geometry (your current look) */
+    /* default large-screen geometry (your panel fit) */
     #gallery-overlay,
     #video-overlay{
       position:fixed;
@@ -56,69 +62,56 @@
     }
 
     /* Responsiveness: relax margins as viewport narrows so the iframe still fits */
-    @media (max-width: 1600px){
-      #gallery-overlay,
-      #video-overlay{ inset: 12vh 20vw 16vh 20vw; }
+    @media (max-width:1600px){ #gallery-overlay,#video-overlay{ inset:12vh 20vw 16vh 20vw; } }
+    @media (max-width:1200px){ #gallery-overlay,#video-overlay{ inset: 9vh 12vw 12vh 12vw; } }
+    @media (max-width: 900px){ #gallery-overlay,#video-overlay{ inset: 6vh  6vw  8vh  6vw; } }
+    @media (max-width: 680px){ #gallery-overlay,#video-overlay{ inset: 3vh  2vw  4vh  2vw; } }
+
+    /* Exact-phone breakpoint: make the overlay fill the whole screen */
+    @media (max-width: 372px){
+      #gallery-overlay,#video-overlay{ inset:0 !important; }
+      .g-frame{ border-radius:0; }
     }
-    @media (max-width: 1200px){
-      #gallery-overlay,
-      #video-overlay{ inset: 9vh 12vw 12vh 12vw; }
-    }
-    @media (max-width: 900px){
-      #gallery-overlay,
-      #video-overlay{ inset: 6vh 6vw 8vh 6vw; }
-    }
-    @media (max-width: 680px){
-      #gallery-overlay,
-      #video-overlay{ inset: 3vh 2vw 4vh 2vw; }
-    }
-/* Exact-phone breakpoint: make the overlay fill the whole screen */
-@media (max-width: 372px){
-  #gallery-overlay,
-  #video-overlay{
-    inset: 0 !important;   /* top/right/bottom/left = 0 */
-  }
-  .g-frame{ border-radius: 0; }  /* square corners on tiny screens */
-}
   </style>
 
   <!-- Image gallery overlay -->
   <div id="gallery-overlay" aria-modal="true" role="dialog">
     <div class="p2vr-gallery">
-      <iframe id="imgFrame" class="g-frame"
-        src="https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/gallery.html?album=LHP">
-      </iframe>
+      <iframe id="imgFrame" class="g-frame" src="about:blank"></iframe>
     </div>
   </div>
 
   <!-- Video gallery overlay -->
   <div id="video-overlay" aria-modal="true" role="dialog">
     <div class="p2vr-gallery">
-      <iframe id="vidFrame" class="g-frame"
-        src="https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/video-gallery.html?album=LHP">
-      </iframe>
+      <iframe id="vidFrame" class="g-frame" src="about:blank"></iframe>
     </div>
   </div>
 
   <script>
-    /* Open helpers (can be called from skin Actions: JS -> openImageGallery() / openVideoGallery()) */
+    /* ===== GitHub Pages base for overlays =====
+       If you move the files, just change this one constant. */
+    const PAGES_BASE = "https://thpt-lhpnd.github.io/LHP-Tour/LHP3";
+
+    function buildUrl(page, album){
+      const ret = encodeURIComponent(location.href);
+      const ts  = Date.now(); // cache-bust each open
+      return `${PAGES_BASE}/${page}?album=${encodeURIComponent(album)}&return=${ret}&t=${ts}`;
+    }
+
+    /* Open helpers you can call from the Pano2VR skin
+       Action → JavaScript → openImageGallery('LHP')
+       Action → JavaScript → openVideoGallery('LHP')
+    */
     window.openImageGallery = function(album = 'LHP'){
-      try {
-        const ret = encodeURIComponent(location.href);
-        const src = `https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
-        const f = document.getElementById('imgFrame');
-        if (f) f.src = src;  // cache-bust each open
-      } catch(_) {}
+      const f = document.getElementById('imgFrame');
+      if (f) f.src = buildUrl('gallery.html', album);
       location.hash = '#gallery-overlay';
     };
 
     window.openVideoGallery = function(album = 'LHP'){
-      try {
-        const ret = encodeURIComponent(location.href);
-        const src = `https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/video-gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
-        const f = document.getElementById('vidFrame');
-        if (f) f.src = src;  // cache-bust each open
-      } catch(_) {}
+      const f = document.getElementById('vidFrame');
+      if (f) f.src = buildUrl('video-gallery.html', album);
       location.hash = '#video-overlay';
     };
 
@@ -136,6 +129,5 @@
   <!-- ===== /overlays ===== -->
 
   <noscript><p><b>Please enable Javascript!</b></p></noscript>
-  <!-- -----------8<----------- cut here -----------8<----------- -->
 </body>
 </html>
