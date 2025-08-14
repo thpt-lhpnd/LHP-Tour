@@ -95,7 +95,7 @@
   <div id="video-overlay" aria-modal="true" role="dialog">
     <div class="p2vr-gallery">
       <iframe id="vidFrame" class="g-frame"
-        src="https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/video-gallery.html?album=LHP">
+        src="https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/video-gallery.html?album=LHP">
       </iframe>
     </div>
   </div>
@@ -105,7 +105,7 @@
     window.openImageGallery = function(album = 'LHP'){
       try {
         const ret = encodeURIComponent(location.href);
-        const src = `https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
+        const src = `https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
         const f = document.getElementById('imgFrame');
         if (f) f.src = src;  // cache-bust each open
       } catch(_) {}
@@ -115,7 +115,7 @@
     window.openVideoGallery = function(album = 'LHP'){
       try {
         const ret = encodeURIComponent(location.href);
-        const src = `https://lhpcorp.com/wp-content/uploads/2025/07/LHP3/video-gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
+        const src = `https://github.com/thpt-lhpnd/LHP-Tour/blob/a0ba7020e3bcde23591f0665173525c14cc9ebdb/video-gallery.html?album=${encodeURIComponent(album)}&return=${ret}&t=${Date.now()}`;
         const f = document.getElementById('vidFrame');
         if (f) f.src = src;  // cache-bust each open
       } catch(_) {}
