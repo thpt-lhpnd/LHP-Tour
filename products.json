@@ -1,0 +1,30 @@
+[
+  {
+    "id": "SKU-CHAIR-01",
+    "name": "Ghế Bistro",
+    "price": 1290000,
+    "currency": "VND",
+    "node": "node_showroom_A",
+    "yaw": 92,
+    "pitch": -2,
+    "fov": 70,
+    "thumb": "media/chair01.jpg",
+    "keywords": "ghe, chair, bistro, go",
+    "desc": "Ghế gỗ bền chắc, phù hợp không gian tối giản.",
+    "model": { "type": "glb", "url": "media/chair01.glb" }
+  },
+  {
+    "id": "SKU-LAMP-02",
+    "name": "Đèn Floor Arc",
+    "price": 1590000,
+    "currency": "VND",
+    "node": "node_showroom_B",
+    "yaw": -45,
+    "pitch": -8,
+    "fov": 75,
+    "thumb": "media/lamp02.jpg",
+    "keywords": "den, lamp, floor, arc",
+    "desc": "Đèn sàn thân kim loại, ánh sáng ấm.",
+    "model": { "type": "sketchfab", "url": "https://sketchfab.com/models/XXXXXXXX/embed" }
+  }
+]

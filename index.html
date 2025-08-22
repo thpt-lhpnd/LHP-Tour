@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
+  <title></title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, minimal-ui" />
+  <style type="text/css" title="Default">
+    /* fullscreen */
+    html { height:100%; }
+    body { height:100%; margin:0; overflow:hidden; } /* disable scrollbars */
+    /* fix for scroll bars on webkit & >= Mac OS X Lion */
+    ::-webkit-scrollbar { background-color: rgba(0,0,0,0.5); width: .75em; height: .75em; }
+    ::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,.5); }
+  </style>
+
+  <!-- Fonts / 3rd party css (optional) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap"/>
+  <link rel="stylesheet" href="3rdparty/leaflet/leaflet.css"/>
+</head>
+<body>
+  <!-- Pano2VR player -->
+  <div id="container" style="width:100%;height:100%;">Loading...</div>
+
+  <!-- Core scripts -->
+  <script src="pano2vr_player.js"></script>
+  <script src="skin.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="https://player.vimeo.com/api/player.js"></script>
+  <script src="3rdparty/leaflet/leaflet.js"></script>
+
+  <script>
+    // create the panorama player with the container
+    pano = new pano2vrPlayer("container");
+    // add the skin object
+    skin = new pano2vrSkin(pano);
+    // load the configuration
+    window.addEventListener("load", function () {
+      pano.readConfigUrlAsync("pano.xml");
+    });
+  </script>
+
+  <noscript><p><b>Please enable Javascript!</b></p></noscript>
+
+  <!-- ========================= PRODUCT SEARCH OVERLAY ========================= -->
+  <script>
+  (function(){
+    /* ---------- CSS for the overlay ---------- */
+    const style=document.createElement('style');
+    style.textContent = `
+#searchOverlay{
+  position:fixed; top:0; right:0; bottom:0; width:min(520px,92vw);
+  background:#fff; z-index:9999; display:none;
+  box-shadow:-14px 0 28px rgba(0,0,0,.12); border-left:1px solid #e5e7eb;
+  font:14px/1.4 system-ui,Roboto,Arial;
+}
+#searchOverlay .bar{
+  height:56px; padding:10px 12px; border-bottom:1px solid #e5e7eb;
+  display:flex; gap:8px; align-items:center;
+}
+#searchOverlay input{
+  flex:1; height:36px; padding:8px 12px; border:1px solid #d1d5db;
+  border-radius:8px; font-size:16px;
+}
+#searchOverlay .close{
+  padding:8px 10px; border:1px solid #d1d5db; border-radius:8px;
+  background:#fff; cursor:pointer;
+}
+#searchOverlay .list{ height:calc(100vh - 56px); overflow:auto; padding:8px 12px; }
+#searchOverlay .item{
+  display:flex; gap:12px; padding:10px; border-bottom:1px solid #eee; cursor:pointer;
+}
+#searchOverlay .item:hover{ background:#f9fafb; }
+#searchOverlay .thumb{ width:64px; height:64px; object-fit:cover; border-radius:8px; }
+#searchOverlay .name{ font-weight:600; font-size:16px; }
+#searchOverlay .price{ opacity:.85; font-size:14px; }
+    `;
+    document.head.appendChild(style);
+
+    /* ---------- HTML structure ---------- */
+    const overlay=document.createElement('div');
+    overlay.id='searchOverlay';
+    overlay.innerHTML = `
+      <div class="bar">
+        <input id="ps_q" placeholder="Tìm theo tên, mã, từ khóa…"/>
+        <button class="close" id="ps_close">Đóng</button>
+      </div>
+      <div class="list" id="ps_list"></div>
+    `;
+    document.body.appendChild(overlay);
+
+    /* ---------- Logic ---------- */
+    let DATA=[];
+    const $ = id => document.getElementById(id);
+    function vnd(n){ return (n||0).toLocaleString('vi-VN') + ' đ'; }
+
+    async function loadData(){
+      if (DATA.length) return;
+      try{
+        const r = await fetch('products.json', {cache:'no-store'});
+        if (!r.ok) throw new Error(r.status);
+        DATA = await r.json();
+      }catch(e){
+        console.warn('products.json not loaded:', e.message);
+        DATA = []; // still allow overlay to open
+      }
+    }
+    function render(){
+      const q = ($('ps_q').value || '').trim().toLowerCase();
+      const items = DATA.filter(p => !q || [p.id,p.name,p.keywords].join(' ').toLowerCase().includes(q));
+      $('ps_list').innerHTML =
+        (items.map(p=>`
+          <div class="item" data-id="${p.id}">
+            <img class="thumb" src="${p.thumb||''}" alt="">
+            <div>
+              <div class="name">${p.name}</div>
+              <div class="price">${vnd(p.price)}</div>
+              <div class="meta">${p.id}</div>
+            </div>
+          </div>`).join(''))
+        || `<div style="padding:12px;opacity:.7">Chưa tải được dữ liệu (products.json).</div>`;
+
+      $('ps_list').querySelectorAll('.item').forEach(it=>{
+        it.onclick = ()=>{
+          const p = DATA.find(x=>x.id===it.dataset.id); if(!p) return;
+          if (window.pano){
+            pano.openNext(`{${p.node}}`, p.yaw ?? 0, p.pitch ?? 0, p.fov ?? 70);
+            pano.setVariableValue('product_name', p.name || '');
+            pano.setVariableValue('product_price', vnd(p.price));
+            pano.setVariableValue('product_desc', p.desc || '');
+            pano.setVariableValue('product_image', p.thumb || '');
+            let murl = '';
+            if (p.model){
+              murl = p.model.type==='sketchfab' ? p.model.url
+                   : p.model.type==='glb' ? `model-viewer.html?src=${encodeURIComponent(p.model.url)}` : '';
+            }
+            pano.setVariableValue('product_model_url', murl);
+            pano.setVariableValue('v_show_product_panel', true);
+          }
+          close();
+        };
+      });
+    }
+
+    async function open(){
+      overlay.style.display='block';
+      if (window.pano) pano.setVariableValue('v_open_search', true);
+      setTimeout(()=> $('ps_q') && $('ps_q').focus(), 0);
+      await loadData();
+      render();
+    }
+    function close(){
+      overlay.style.display='none';
+      if (window.pano) pano.setVariableValue('v_open_search', false);
+    }
+
+    document.addEventListener('input', e => { if (e.target && e.target.id==='ps_q') render(); });
+    $('ps_close').onclick = close;
+
+    // Expose function for skin buttons
+    window.toggleSearch = (show)=> show ? open() : close();
+
+    // Fallback: if you prefer a skin variable instead of javascript: URL
+    function watchVar(){
+      try{
+        if (window.pano){
+          const want = !!pano.getVariableValue('v_open_search');
+          const isOpen = overlay.style.display === 'block';
+          if (want && !isOpen) open();
+          if (!want && isOpen) close();
+        }
+      }catch(e){}
+      requestAnimationFrame(watchVar);
+    }
+    requestAnimationFrame(watchVar);
+  })();
+  </script>
+  <!-- ======================= /PRODUCT SEARCH OVERLAY ======================= -->
+
+</body>
+</html>
