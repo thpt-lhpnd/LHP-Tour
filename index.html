@@ -4,14 +4,14 @@
   <meta http-equiv="Content-Type" content="text/html;charset=UTF-8">
   <title></title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, minimal-ui" />
-  <style type="text/css" title="Default">
+  <style>
     html { height:100%; }
     body { height:100%; margin:0; overflow:hidden; }
     ::-webkit-scrollbar { background-color: rgba(0,0,0,0.5); width:.75em; height:.75em; }
     ::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,.5); }
   </style>
 
-  <!-- Optional fonts / CSS (keep/remove as you like) -->
+  <!-- (optional) fonts / css -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap"/>
@@ -37,7 +37,7 @@
 
   <noscript><p><b>Please enable Javascript!</b></p></noscript>
 
-  <!-- =================== PRODUCT SEARCH OVERLAY + POV CONTROL =================== -->
+  <!-- =================== PRODUCT SEARCH OVERLAY + ROBUST NODE MOVE =================== -->
   <script>
   (function(){
     /* ---------- Styles ---------- */
@@ -101,16 +101,19 @@
       }
     }
 
-    // ---- POV helpers (robust) ----
-    function normNodeId(id){ return (id||'').toString().replace(/[{}]/g,''); }
-
-    function getCurrentNodeId(){
+    // ---- POV & Node helpers ----
+    const normNodeId = id => (id||'').toString().replace(/[{}]/g,'');
+    const getCurrentNodeId = () => {
       try{
-        if (typeof pano.getNode === 'function') return normNodeId(pano.getNode());
         if (typeof pano.getCurrentNode === 'function') return normNodeId(pano.getCurrentNode());
+        if (typeof pano.getNode === 'function') return normNodeId(pano.getNode());
       }catch(e){}
       return '';
-    }
+    };
+    const getNodeIds = () => {
+      try { return (pano.getNodeIds?.() || []).map(normNodeId); } catch(e){ return []; }
+    };
+    const nodeExists = id => getNodeIds().includes(normNodeId(id));
 
     function smoothPanTo(yaw, pitch, fov, ms = 900){
       const lerp = (a,b,t)=>a+(b-a)*t;
@@ -132,32 +135,51 @@
       requestAnimationFrame(step);
     }
 
-    /** Jump to node if needed, then apply view (waits for node load) */
+    // keep the requested view until the node finishes changing
+    let pendingView = null;
+
     function goToNodeAndView(nodeId, yaw, pitch, fov){
       const target = normNodeId(nodeId);
       const current = getCurrentNodeId();
+      const all = getNodeIds();
 
-      // same node → animate
-      if (target && current && target === current){
+      console.log('[SearchNav] current:', current, 'target:', target, 'nodes:', all);
+
+      if (!target){
+        console.warn('[SearchNav] missing node id in product');
+        return;
+      }
+      if (!nodeExists(target)){
+        console.warn('[SearchNav] target node not found in tour:', target, 'Available:', all);
+        return;
+      }
+
+      if (target === current){
         smoothPanTo(yaw, pitch, fov, 900);
         return;
       }
 
-      // different/unknown node → open, then poll until loaded
-      if (target){
-        pano.openNext(`{${target}}`);
-        const t0 = performance.now();
-        const timeout = 6000; // ms
-        (function waitReady(){
-          const now = performance.now();
-          if (getCurrentNodeId() === target){
-            setTimeout(()=> pano.setPanTiltFov(yaw ?? 0, pitch ?? 0, fov ?? 70), 60);
-          }else if (now - t0 < timeout){
-            setTimeout(waitReady, 60);
-          }
-        })();
+      // Change node; set view after change
+      pendingView = { target, yaw, pitch, fov };
+      pano.openNext(`{${target}}`); // {nodeid} switches node
+    }
+
+    // Apply pending view after node load/change
+    function tryApplyPending(){
+      if (!pendingView) return;
+      const cur = getCurrentNodeId();
+      if (cur === pendingView.target){
+        // a tiny delay gives the new node a breath before we set the view
+        setTimeout(()=> {
+          pano.setPanTiltFov(pendingView.yaw ?? 0, pendingView.pitch ?? 0, pendingView.fov ?? 70);
+          pendingView = null;
+        }, 60);
       }
     }
+
+    // Hook into player events (7.x exposes these)
+    pano?.on?.('changenode', tryApplyPending);
+    pano?.on?.('imagesready', tryApplyPending);
 
     function render(){
       const q = ($('ps_q').value || '').trim().toLowerCase();
@@ -178,7 +200,7 @@
         it.onclick = ()=>{
           const p = DATA.find(x=>x.id===it.dataset.id); if(!p) return;
 
-          // 1) Move POV to the product
+          // 1) Move POV to the product (same-node = smooth; cross-node = change then snap)
           goToNodeAndView(p.node, p.yaw, p.pitch, p.fov);
 
           // 2) Fill panel variables
@@ -202,14 +224,14 @@
 
     async function open(){
       overlay.style.display='block';
-      if (window.pano) pano.setVariableValue('v_open_search', true);
-      setTimeout(()=> $('ps_q') && $('ps_q').focus(), 0);
+      pano.setVariableValue?.('v_open_search', true);
+      setTimeout(()=> $('ps_q')?.focus(), 0);
       await loadData();
       render();
     }
     function close(){
       overlay.style.display='none';
-      if (window.pano) pano.setVariableValue('v_open_search', false);
+      pano.setVariableValue?.('v_open_search', false);
     }
 
     document.addEventListener('input', e => { if (e.target && e.target.id==='ps_q') render(); });
@@ -219,20 +241,17 @@
     window.toggleSearch = (show)=> show ? open() : close();
 
     // Fallback: open/close via skin variable v_open_search if you prefer Set Variable Value
-    function watchVar(){
+    (function watchVar(){
       try{
-        if (window.pano){
-          const want = !!pano.getVariableValue('v_open_search');
-          const isOpen = overlay.style.display === 'block';
-          if (want && !isOpen) open();
-          if (!want && isOpen) close();
-        }
+        const want = !!pano.getVariableValue?.('v_open_search');
+        const isOpen = overlay.style.display === 'block';
+        if (want && !isOpen) open();
+        if (!want && isOpen) close();
       }catch(e){}
       requestAnimationFrame(watchVar);
-    }
-    requestAnimationFrame(watchVar);
+    })();
   })();
   </script>
-  <!-- ================= /PRODUCT SEARCH OVERLAY + POV CONTROL ================= -->
+  <!-- ================= /PRODUCT SEARCH OVERLAY + ROBUST NODE MOVE ================= -->
 </body>
 </html>
