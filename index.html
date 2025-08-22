@@ -11,7 +11,7 @@
     ::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,.5); }
   </style>
 
-  <!-- (optional) fonts / css you already had -->
+  <!-- Optional fonts / CSS (keep/remove as you like) -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:ital,opsz,wght@0,18..144,300..900;1,18..144,300..900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&display=swap"/>
@@ -30,8 +30,8 @@
 
   <script>
     // Create player and load config
-    pano = new pano2vrPlayer("container");
-    skin = new pano2vrSkin(pano);
+    window.pano = new pano2vrPlayer("container");
+    window.skin = new pano2vrSkin(pano);
     window.addEventListener("load", function(){ pano.readConfigUrlAsync("pano.xml"); });
   </script>
 
@@ -101,32 +101,62 @@
       }
     }
 
-    // Smooth pan/tilt/fov animation (for same-node moves)
+    // ---- POV helpers (robust) ----
+    function normNodeId(id){ return (id||'').toString().replace(/[{}]/g,''); }
+
+    function getCurrentNodeId(){
+      try{
+        if (typeof pano.getNode === 'function') return normNodeId(pano.getNode());
+        if (typeof pano.getCurrentNode === 'function') return normNodeId(pano.getCurrentNode());
+      }catch(e){}
+      return '';
+    }
+
     function smoothPanTo(yaw, pitch, fov, ms = 900){
       const lerp = (a,b,t)=>a+(b-a)*t;
       const ease = t => t<.5 ? 2*t*t : -1+(4-2*t)*t; // easeInOutQuad
-      const p0 = pano.getPan ? pano.getPan() : 0;
-      const t0 = pano.getTilt ? pano.getTilt() : 0;
-      const f0 = pano.getFov ? pano.getFov() : 70;
+      const p0 = pano.getPan?.()  ?? 0;
+      const t0 = pano.getTilt?.() ?? 0;
+      const f0 = pano.getFov?.()  ?? 70;
       const start = performance.now();
       function step(now){
         const k = Math.min(1, (now-start)/ms);
         const e = ease(k);
-        const py = lerp(p0, yaw  ?? p0, e);
-        const pt = lerp(t0, pitch?? t0, e);
-        const pf = lerp(f0, fov  ?? f0, e);
-        if (pano.setPanTiltFov) pano.setPanTiltFov(py, pt, pf);
+        pano.setPanTiltFov(
+          lerp(p0, yaw  ?? p0, e),
+          lerp(t0, pitch?? t0, e),
+          lerp(f0, fov  ?? f0, e)
+        );
         if (k<1) requestAnimationFrame(step);
       }
       requestAnimationFrame(step);
     }
 
-    function getCurrentNodeId(){
-      try{
-        if (typeof pano.getNode === 'function') return pano.getNode();
-        if (typeof pano.getCurrentNode === 'function') return pano.getCurrentNode();
-      }catch(e){}
-      return null;
+    /** Jump to node if needed, then apply view (waits for node load) */
+    function goToNodeAndView(nodeId, yaw, pitch, fov){
+      const target = normNodeId(nodeId);
+      const current = getCurrentNodeId();
+
+      // same node → animate
+      if (target && current && target === current){
+        smoothPanTo(yaw, pitch, fov, 900);
+        return;
+      }
+
+      // different/unknown node → open, then poll until loaded
+      if (target){
+        pano.openNext(`{${target}}`);
+        const t0 = performance.now();
+        const timeout = 6000; // ms
+        (function waitReady(){
+          const now = performance.now();
+          if (getCurrentNodeId() === target){
+            setTimeout(()=> pano.setPanTiltFov(yaw ?? 0, pitch ?? 0, fov ?? 70), 60);
+          }else if (now - t0 < timeout){
+            setTimeout(waitReady, 60);
+          }
+        })();
+      }
     }
 
     function render(){
@@ -148,30 +178,23 @@
         it.onclick = ()=>{
           const p = DATA.find(x=>x.id===it.dataset.id); if(!p) return;
 
-          // Always ensure we land on the product's node & view
-          const current = getCurrentNodeId();
-          if (p.node && current && current === p.node) {
-            // Same node → smooth move
-            smoothPanTo(p.yaw, p.pitch, p.fov, 900);
-          } else {
-            // Different node (or unknown) → openNext with target view
-            pano.openNext(`{${p.node}}`, p.yaw ?? 0, p.pitch ?? 0, p.fov ?? 70);
-          }
+          // 1) Move POV to the product
+          goToNodeAndView(p.node, p.yaw, p.pitch, p.fov);
 
-          // Fill skin variables for your info panel
-          if (window.pano){
-            pano.setVariableValue('product_name', p.name || '');
-            pano.setVariableValue('product_price', vnd(p.price));
-            pano.setVariableValue('product_desc', p.desc || '');
-            pano.setVariableValue('product_image', p.thumb || '');
-            let murl = '';
-            if (p.model){
-              murl = p.model.type==='sketchfab' ? p.model.url
-                   : p.model.type==='glb' ? `model-viewer.html?src=${encodeURIComponent(p.model.url)}` : '';
-            }
-            pano.setVariableValue('product_model_url', murl);
-            pano.setVariableValue('v_show_product_panel', true);
+          // 2) Fill panel variables
+          pano.setVariableValue('product_name', p.name || '');
+          pano.setVariableValue('product_price', vnd(p.price));
+          pano.setVariableValue('product_desc', p.desc || '');
+          pano.setVariableValue('product_image', p.thumb || '');
+          let murl = '';
+          if (p.model){
+            murl = p.model.type==='sketchfab' ? p.model.url
+                 : p.model.type==='glb' ? `model-viewer.html?src=${encodeURIComponent(p.model.url)}` : '';
           }
+          pano.setVariableValue('product_model_url', murl);
+          pano.setVariableValue('v_show_product_panel', true);
+
+          // 3) Close overlay
           close();
         };
       });
@@ -192,10 +215,10 @@
     document.addEventListener('input', e => { if (e.target && e.target.id==='ps_q') render(); });
     document.getElementById('ps_close').onclick = close;
 
-    // Expose for skin button
+    // Expose for skin button (use: Go to URL -> javascript:(window.toggleSearch&&window.toggleSearch(true))  Target: Self)
     window.toggleSearch = (show)=> show ? open() : close();
 
-    // Fallback: open/close by skin variable v_open_search (if you prefer Set Variable Value)
+    // Fallback: open/close via skin variable v_open_search if you prefer Set Variable Value
     function watchVar(){
       try{
         if (window.pano){
